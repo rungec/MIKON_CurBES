@@ -43,20 +43,24 @@ towns <- st_read("O:/Claire_Big/Arctic/Original/SSB/Tettsted2015", "Tettsted2015
 #Euclidean distance from nearest road
 distancefromroad <- st_distance(ppgis, roads)
 dist2road_m <- apply(distancefromroad, 1, min)
+names(dist2road_m) <- "dist2road_m"
 ppgis_spatial <- bind_cols(ppgis, dist2road_m)
 
 #Euclidean distance from nearest town
 distancefromtown <- st_distance(ppgis, towns)
 dist2town_m <- apply(distancefromtown, 1, min)
+names(dist2town_m) <- "dist2town_m"
 ppgis_spatial <- bind_cols(ppgis_spatial, dist2town_m)
 
 #Any river or lake >2ha within 500m
 distancefromriver <- st_distance(ppgis, rivers)
 dist2river_m <- apply(distancefromriver, 1, min)
+names(dist2river_m) <- "dist2river_m"
 ppgis_spatial <- bind_cols(ppgis_spatial, dist2river_m)
 
 distancefromlake <- st_distance(ppgis, lakes)
 dist2lake_m <- apply(distancefromlake, 1, min)
+names(dist2lake_m) <- "dist2lake_m"
 ppgis_spatial <- bind_cols(ppgis_spatial, dist2lake_m)
 
 ppgis_spatial <- ppgis_spatial %>% 
