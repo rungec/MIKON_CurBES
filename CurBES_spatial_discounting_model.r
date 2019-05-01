@@ -74,7 +74,7 @@ sink("Model_of_dist2road_byactivity_nls.txt")
 print("Chi-sq test: Does frequency change with activity")
 chisq.test(ppgis_freq$frequ, ppgis_freq$activity)
 sink()
-             
+
 #Model 1 glm frequ~exp(a+b*dist2road_round) + activity
 mod1 <- glm(log(frequ) ~ log(dist2road_round+1)*activity, data=ppgis_freq)
 summary(mod1)
@@ -111,9 +111,9 @@ write.csv(x, "Model_of_dist2road_byactivity_nls_coefs.csv", row.names=FALSE)
 ppgis_freq_preds <- ppgis_freq %>% 
                       modelr::add_predictions(mod3) %>% 
                       mutate(pred3 = pred) %>%
-                      modelr::add_residuals(mod3) #%>%
-                     # modelr::add_predictions(mod1) %>%
-                      #mutate(pred1 = pred)
+                      modelr::add_residuals(mod3) %>%
+                      modelr::add_predictions(mod2a) %>%
+                      mutate(pred1 = pred)
 
 
 #Plot boxplot of residuals by activity
@@ -153,9 +153,16 @@ ggsave("Model_of_dist2road_byactivity_nls_fit.png", p)
 
 
 
-
-
-
+#Could also do kolmogorov-smirnov test
+subdf <- ppgis_freq_preds %>% filter(activity=="nature")
+#is the frequency of nature different from the model2a predictions
+ks.test(subdf$frequ, subdf$pred1)
+#is the model3 predictions different from the model2a predictions
+ks.test(subdf$pred3, subdf$pred1)
+#but I'm not sure how this works when we have different numbers of mapped points - can we compare different activities?
+#also it doesn't take into account the order of frequency points
+subdf2 <- ppgis_freq_preds %>% filter(activity=="cleanwater")
+ks.test(subdf$pred3, subdf2$pred3)
 
 #beta regression? but essentially this is presence only data
 #dist2road_m ~ activity + ...?
