@@ -34,7 +34,7 @@ rivers <- st_read("O:/Claire_Big/Arctic/Original/BasemapN500", "n500_riversl") %
             filter(OBJTYPE=="ElvBekk") #big rivers
 lakes <- st_read("O:/Claire_Big/Arctic/Original/N50 Data/Lakes50", "Innsjo_Innsjo") %>% 
             st_intersection(bb) %>% 
-            filter(areal_km >= 0.02) #lakes bigger than 2ha
+            filter(areal_km2 >= 0.02) #lakes bigger than 2ha
 towns <- st_read("O:/Claire_Big/Arctic/Original/SSB/Tettsted2015", "Tettsted2015") %>% 
             st_intersection(bb)
 
@@ -46,24 +46,24 @@ towns <- st_read("O:/Claire_Big/Arctic/Original/SSB/Tettsted2015", "Tettsted2015
 distancefromroad <- st_distance(ppgis, roads)
 dist2road_m <- apply(distancefromroad, 1, min)
 names(dist2road_m) <- "dist2road_m"
-ppgis_spatial <- bind_cols(ppgis, dist2road_m)
+ppgis_spatial <- cbind(ppgis, dist2road_m)
 
 #Euclidean distance from nearest town
 distancefromtown <- st_distance(ppgis, towns)
 dist2town_m <- apply(distancefromtown, 1, min)
 names(dist2town_m) <- "dist2town_m"
-ppgis_spatial <- bind_cols(ppgis_spatial, dist2town_m)
+ppgis_spatial <- cbind(ppgis_spatial, dist2town_m)
 
 #Any river or lake >2ha within 500m
 distancefromriver <- st_distance(ppgis, rivers)
 dist2river_m <- apply(distancefromriver, 1, min)
 names(dist2river_m) <- "dist2river_m"
-ppgis_spatial <- bind_cols(ppgis_spatial, dist2river_m)
+ppgis_spatial <- cbind(ppgis_spatial, dist2river_m)
 
 distancefromlake <- st_distance(ppgis, lakes)
 dist2lake_m <- apply(distancefromlake, 1, min)
 names(dist2lake_m) <- "dist2lake_m"
-ppgis_spatial <- bind_cols(ppgis_spatial, dist2lake_m)
+ppgis_spatial <- cbind(ppgis_spatial, dist2lake_m)
 
 ppgis_spatial <- ppgis_spatial %>% 
                 mutate(waterbodywithin_500m = case_when(dist2lake_m <= 500 | dist2river_m <= 500 ~ TRUE,
@@ -111,16 +111,22 @@ pca.data <- ppgis_spatial %>% st_set_geometry(NULL) %>%
             select(c(broadleafforest, cropland, heathshrub, sparselyvegetated, cropland, 
                      wetland, developed, urbangreen, MINHOEYDE))                                                                
 pca.envir<-princomp(pca.data, cor=T) # important to remember to normalize the data in PCA, if on different #scales to prevent that certain variables dominate, but the landcoverdata was on same scale as far as I #remember
-biplot(pca.envir)
-plot(pca.envir)
+
+png("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/PCA_of_landuse.png", width=14, height=7, units="in", res=150)
+par(mfrow=c(1,2))
+  biplot(pca.envir)
+  plot(pca.envir)
+dev.off()
+sink("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/PCA_of_landuse.txt")
 loadings(pca.envir)
 summary(pca.envir)
-PCA.var<-as.data.frame(pca.envir$scores[,1:2]) #make data frame of PCA variables 
+sink()
+PCA.var<-as.data.frame(pca.envir$scores[,1:3]) #make data frame of PCA variables 
 names(PCA.var) <- c("PCA_comp1", "PCA_comp2", "PCA_comp3")
 
 ppgis_spatial <- ppgis_spatial %>% bind_cols(PCA.var)
 
 #Save dataset
-ppgis_out %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis", "Curbes_ppgis_plus_variables.shp")
-ppgis_out %>% st_geometry(NULL) %>% write_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_variables.csv")
+ppgis_spatial %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_variables.shp")
+ppgis_spatial %>% st_set_geometry(NULL) %>% as.data.frame() %>% write_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_variables.csv")
 
