@@ -1,4 +1,4 @@
-#Extract spatial data for PPGIS points
+#Extract spatial data for PPGIS points (both values and preferences)
 
 require(sf)
 require(tidyverse)
@@ -13,11 +13,11 @@ laea_crs <- st_read("D:/Box Sync/Arctic/Data/Boundaries/Borders/By_country/Norwa
             st_crs()#for the laea polar crs
 
 ppgis <- st_read("D:/Box Sync/Arctic/Data/PPGIS_CultES/Processed/shps", "PPGIS_Markers_north_UTM33N") %>% 
-          st_intersection(bb) %>%
-          filter(category %in% c("biological", "cabin", "cleanwater", "cultureident", "gathering", 
-                                 "hunt/fish", "income", "otherchange", "pasture", "recreation", 
-                                 "scenic", "social", "specialplace", "spiritual", "therapuetic", 
-                                 "undisturbnature")) #drop the + and - categories
+          st_intersection(bb) #%>%
+          #filter(category %in% c("biological", "cabin", "cleanwater", "cultureident", "gathering", 
+          #                       "hunt/fish", "income", "otherchange", "pasture", "recreation", 
+          #                       "scenic", "social", "specialplace", "spiritual", "therapuetic", 
+          #                       "undisturbnature")) #drop the + and - categories
 
 roads <- st_read("O:/Claire_Big/Arctic/Original/BasemapN500", "n500_roadsl") %>% 
             st_intersection(bb) %>%
@@ -127,6 +127,6 @@ names(PCA.var) <- c("PCA_comp1", "PCA_comp2", "PCA_comp3")
 ppgis_spatial <- ppgis_spatial %>% bind_cols(PCA.var)
 
 #Save dataset
-ppgis_spatial %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_variables.shp")
-ppgis_spatial %>% st_set_geometry(NULL) %>% as.data.frame() %>% write_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_variables.csv")
+ppgis_spatial %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment.shp")
+ppgis_spatial %>% st_set_geometry(NULL) %>% as.data.frame() %>% write_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment.csv")
 
