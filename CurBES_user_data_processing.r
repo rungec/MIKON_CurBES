@@ -9,6 +9,7 @@ setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
 ### load data ----
 ppgis_sf <- st_read("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis", "Curbes_ppgis_plus_environment")
+ppgis_df <- read_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment.csv")
 
 ### Add socioeconomic data ----
 se_df <- readxl::read_xlsx("D:/Box Sync/Arctic/Data/PPGIS_CultES/Original/Participant_characteristics.xlsx", sheet="Participant_characteristics", range="A1:CA736")
@@ -43,7 +44,9 @@ ppgis_sf_se <- merge(ppgis_sf, se_df, by.x="LogID", by.y="LoginID", all.x=TRUE)
 
 #Save dataset
 ppgis_sf_se %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.shp")
-ppgis_sf_se %>% st_set_geometry(NULL) %>% as.data.frame() %>% write_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
+ppgis_df_se <- ppgis_sf_se %>% st_set_geometry(NULL) %>% as.data.frame() 
+names(ppgis_df_se)[1:ncol(ppgis_df)] <- names(ppgis_df)
+  write_csv(ppgis_df_se, "D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
 
 
 ### Correspondence analysis ---- 
