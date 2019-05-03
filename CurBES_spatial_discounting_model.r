@@ -13,21 +13,23 @@ setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 ppgis_df <- read_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
 
 #add extra column
-ppgis_df$mindist2water_m <- apply(ppgis_df[, c("dist2lake_m", "dist2river_m")], 1, min)
+#ppgis_df$mindist2water_m <- apply(ppgis_df[, c("dist2lake_m", "dist2river_m")], 1, min)
 
 ### Drop preferences
 ppgis_df <- ppgis_df %>%  
   filter(category %in% c("biological", "cabin", "cleanwater", "cultureident", "gathering", 
-                         "hunt/fish", "income", "pasture", "recreation", 
+                         "hunt/fish", "recreation", 
                          "scenic", "social", "specialplace", "spiritual", "therapuetic", 
-                         "undisturbnature")) %>% droplevels()
+                         "undisturbnature")) %>% droplevels() #dropped income and pasture
 
 ### Group the values categories into different activities to reduce the number of categories
 ppgis_df <- ppgis_df %>%  
-  mutate(activity = case_when(category %in% c("biological", "undisturbnature")~ "nature",
-                              category %in% c("income", "pasture")~ "grazing",
-                              category %in% c("cabin", "social", "cultureident", "gathering")~ "social",
-                              category %in% c("specialplace", "spiritual", "therapuetic")~ "special",
+  mutate(activity = case_when(category %in% c("biological")~ "biological",
+                              category %in% c("undisturbnature")~ "undisturbnature", 
+                              #category %in% c("income", "pasture")~ "grazing",
+                              category %in% c("gathering") ~ "gathering",
+                              category %in% c("cabin", "social", "cultureident", "specialplace")~ "culture",
+                              category %in% c("spiritual", "therapuetic")~ "spiritual and therapeutic",
                               category %in% c("scenic")~ "scenic",
                               category %in% c("recreation")~ "recreation",
                               category %in% c("cleanwater")~ "cleanwater",
