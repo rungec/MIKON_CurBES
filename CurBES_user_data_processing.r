@@ -23,7 +23,7 @@ ppgis_sf_se <- merge(ppgis_sf, se_df, by.x="LogID", by.y="LoginID", all.x=TRUE)
 #Save dataset
 ppgis_sf_se %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.shp")
 ppgis_df_se <- ppgis_sf_se %>% st_set_geometry(NULL) %>% as.data.frame() 
-names(ppgis_df_se)[1:ncol(ppgis_df)] <- names(ppgis_df)
+names(ppgis_df_se)[5:ncol(ppgis_df)] <- names(ppgis_df)[5:ncol(ppgis_df)]
   write_csv(ppgis_df_se, "D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
 
 ############################
