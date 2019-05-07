@@ -39,6 +39,7 @@ ppgis_df <- ppgis_df %>%
 #Function to calculate r-squared
 rsq <- function (x, y) cor(x, y) ^ 2
 
+###############################
 ### PLOT THE DATA ----
 #how far to water
 png("Variable_dist2water_plot.png", width=14, height=7, units="in", res=150)
@@ -70,6 +71,7 @@ png("Variable_correlation_plot.png", width=7, height=7, units="in", res=150)
   corrplot::corrplot.mixed(ppgis_cor, lower.col="black")
 dev.off()
 
+###############################
 ### MODEL DIST2ROAD by ES CATEGORY ----
 #Is there any difference in the distance from roads at which points representing different values are mapped? 
 
@@ -223,7 +225,7 @@ ks.test(subdf$pred3, subdf$pred2a)
 subdf2 <- ppgis_freq_preds %>% filter(activity=="cleanwater")
 ks.test(subdf$pred3, subdf2$pred3)
 
-
+###############################
 ### MODEL DIST2ROAD by SOCIOECONOMIC CLASS ----
 #Are different types of people more likely to map certain values further from roads?
 
@@ -238,19 +240,20 @@ ks.test(subdf$pred3, subdf2$pred3)
 #basically this fits separate nls models on each gender
 #Set up data
 breaktbl <- data.frame(dist2road_round = rep(seq(0, round(max(ppgis_df$dist2road_m), digits=-1), 10), each=length(unique(ppgis_df$gender))),
-                       activity=rep(unique(ppgis_df$gender)))
+                       gender=rep(unique(ppgis_df$gender)), stringsAsFactors = FALSE)
 
 ppgis_freq <- ppgis_df %>% 
   mutate(dist2road_round = round(dist2road_m-4.5, digits=-1)) %>% #round to nearest 10m (9m=>0m, 10m=>10m)
   group_by(gender, dist2road_round) %>%
   summarise(frequ = n()) %>%
   ungroup() %>%
-  right_join(breaktbl, by="dist2road_round") %>%
+  right_join(breaktbl) %>%
   mutate(frequ = ifelse(is.na(frequ), 0, frequ),
-         gender = as.factor(gender))
+         gender = as.factor(gender)) %>%
+  filter(!is.na(gender))
 
 lf <- formula(frequ ~ exp(a+b*dist2road_round) | gender)
-mod4 <- nlme::nlsList(lf, data=ppgis_freq, start=list(a=coef(mod2a)[1], b=coef(mod2a)[2]))
+mod4 <- nlme::nlsList(lf, data=ppgis_freq, start=list(a=0, b=0))
 sink("Model_of_dist2road_bysocioeconomics_nls.txt", append=TRUE)
 print("NLS model of dist2road by gender")
 summary(mod4)
@@ -261,6 +264,7 @@ write.csv(x, "Model_of_dist2road_bygender_nls_coefs.csv", row.names=FALSE)
 
 ### Plot model 4 ----
 ppgis_freq_preds <- ppgis_freq %>% 
+  arrange(gender) %>%
   add_predictions(mod4) %>% 
   add_residuals(mod4) 
 
@@ -271,8 +275,9 @@ sink()
 #Plot the model fit
 p <- ggplot(ppgis_freq_preds, aes(y=frequ, x=dist2road_round/1000, group=gender))+
   geom_point() +
-  geom_line(aes(y=pred), col="red") +
-  facet_wrap("gender", scales = "free_y") +
+  geom_line(aes(y=pred, col=gender)) +
+  #geom_line(aes(y=pred), col="red") +
+  #facet_wrap("gender", scales = "free_y") +
   xlab("Distance to road (km)") + ylab("Frequency of mapped points") +
   theme_minimal()
 ggsave("Model_of_dist2road_bygender_nls_fit.png", p)
@@ -280,15 +285,78 @@ ggsave("Model_of_dist2road_bygender_nls_fit.png", p)
 
 ### GLM model of dist2road by socioeconomics ----
 #dist2road_m ~ activity*gender*age + education + income
+ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK)
 
-g1 <- glm(dist2road_m ~ activity*gender*age + education + income - 1, data = ppgis_freq)
-g2 <- glm(dist2road_m ~ activity*gender*age + education - 1, data = ppgis_freq)
-g3 <- glm(dist2road_m ~ activity*gender*age + income - 1, data = ppgis_freq)
-g4 <- glm(dist2road_m ~ activity*gender*age - 1, data = ppgis_freq)
+g1 <- glm(dist2road_m ~ education - 1, data = ppgis_sub, family = gaussian(link = "log"))
+g2 <- glm(dist2road_m ~ gender - 1, data = ppgis_sub, family = gaussian(link = "log"))
+g3 <- glm(dist2road_m ~ activity - 1, data = ppgis_sub, family = gaussian(link = "log"))
+g4 <- glm(dist2road_m ~ age - 1, data = ppgis_sub, family = gaussian(link = "log"))
+g5 <- glm(dist2road_m ~ activity*gender + education + age + income_NOK, data = ppgis_sub, family = gaussian(link = "log"))
+g7 <- glm(dist2road_m ~ gender*activity + education + age + income_NOK, data = ppgis_sub, family = gaussian(link = "log"))
 
 
-sapply(list(g1, g2, g3, g4), function(x) {
+
+sapply(list(g1, g2, g3, g4, g5), function(x) {
   return(data.frame(AIC(x), BIC(x)))
 })
 
+ppgis_sub_preds <- ppgis_sub %>% 
+  add_predictions(g7) %>% 
+  add_residuals(g7)
+
+ggplot(ppgis_sub_preds, aes(y=exp(pred)/1000, x=activity))+
+  geom_boxplot(aes(col=gender)) + 
+  ylab("Mean distance to road (km)") + xlab("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(ppgis_sub_preds, aes(y=exp(pred)/1000, x=education))+
+  geom_boxplot() + 
+  ylab("Mean distance to road (km)") + xlab("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggplot(ppgis_sub_preds, aes(y=exp(pred)/1000, x=income_NOK))+
+  geom_boxplot() + 
+  ylab("Mean distance to road (km)") + xlab("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  
+facet_wrap(facets=c("education"))
+
+
+#group secondary & higher education
+#group income as per sigrid
+
+
+ppgis_sub_preds <- ppgis_sub %>% 
+  add_predictions(g4) %>% 
+  add_residuals(g4) 
+
+ggplot(ppgis_sub_preds, aes(dist2road_m, resid, group=activity))+
+  geom_point(aes(col=activity))
+
+ggplot(ppgis_sub_preds, aes(x=resid, y=activity))+
+  geom_boxplot() 
+
+ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>% 
+            group_by(activity, gender, age, education, income_NOK) %>%
+            summarise(median_dist = median(dist2road_m),
+                      mean_dist = mean(dist2road_m),
+                      quant_25 = quantile(dist2road_m)[2],
+                      quant_75 = quantile(dist2road_m)[4], 
+                      num_points = n())
+
+
+
+g1 <- glm(dist2road_m ~ activity*gender*age + education + income_NOK - 1, data = ppgis_sub, family = gaussian(link = "log"))
+g2 <- glm(median_dist ~ activity*gender*age + education - 1, data = ppgis_sub)
+g3 <- glm(median_dist ~ activity*gender*age + income_NOK - 1, data = ppgis_sub)
+g4 <- glm(median_dist ~ activity*gender*age - 1, data = ppgis_sub)
+g5 <- glm(median_dist ~ activity - 1, data = ppgis_sub)
+g6 <- glm(median_dist ~ gender*activity - 1, data = ppgis_sub)
+g7 <- glm(median_dist ~ activity*gender - 1, data = ppgis_sub)
+g8 <- glm(median_dist ~ activity*gender - 1 + age + education + income_NOK, data = ppgis_sub)
+g9 <- glm(mean_dist ~ activity*gender - 1 + age + education + income_NOK, data = ppgis_sub)
+g10 <- glm(median_dist ~ activity + gender - 1 + age + education + income_NOK, data = ppgis_sub)
+g11 <- glm(median_dist ~ activity + gender - 1, data = ppgis_sub)
+g12 <- glm(dist2road_m ~ activity + gender - 1, data = ppgis_sub)
+g12b <- glm(dist2road_m ~ activity + gender - 1 + age + education + income_NOK, data = ppgis_sub, family = gaussian(link = "log"))
 
