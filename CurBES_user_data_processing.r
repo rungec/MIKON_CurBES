@@ -2,8 +2,7 @@
 
 require(sf)
 require(tidyverse)
-require(FactoMineR)
-require(factoextra)
+
 
 setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
@@ -12,35 +11,14 @@ ppgis_sf <- st_read("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis", "Curbes_ppgis_
 ppgis_df <- read_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment.csv")
 
 ### Add socioeconomic data ----
-se_df <- readxl::read_xlsx("D:/Box Sync/Arctic/Data/PPGIS_CultES/Original/Participant_characteristics.xlsx", sheet="Participant_characteristics", range="A1:CA736")
+se_df <- readxl::read_xlsx("D:/Box Sync/Arctic/Data/PPGIS_CultES/Original/Participant_characteristics.xlsx", sheet="Participant_sociodem_North", range="A1:J491", na=c("", "NA"))
 
 #select just the se data we are interested in
-se_df <- se_df %>% select(LoginID, gender, age, education, household, income, adults, children, liveyears, internet) %>%
-          mutate(gender = as.factor(gender),
-                 age = case_when(age=="1994"~(2014-1994),
-                                 age=="1940"~(2014-1940),
-                                 age=="1971"~(2014-1971),
-                                 age=="352"~ NA_real_,
-                                 age=="783"~ NA_real_,
-                                 TRUE ~ as.numeric(age)),
-                 education = as.factor(case_when(education %in% c("Ingen valgt", "None selected") ~ NA_character_,
-                                                 TRUE ~ education)),
-                 household = as.factor(household),
-                 income = as.factor(case_when(income %in% c("Ingen valgt", "prefernot", "NULL") ~ NA_character_,
-                                              TRUE ~ income)),
-                 adults = as.factor(case_when(adults=="Ingen" ~ "1",
-                                              adults=="NULL" ~ NA_character_,
-                                              TRUE ~ adults)),
-                 children = as.factor(case_when(children=="Ingen" ~ "0",
-                                              children=="NULL" ~ NA_character_,
-                                              TRUE ~ children)),
-                 liveyears = case_when(liveyears==7500~ NA_real_,
-                                       TRUE ~ as.numeric(str_replace(liveyears, ",", "."))),
-                 internet = as.factor(internet)
-                 )
+se_df <- se_df %>% select(LoginID, gender, age, education, income_NOK, adults, children, liveyears) 
 
 #merge with the ppgis data
-ppgis_sf_se <- merge(ppgis_sf, se_df, by.x="LogID", by.y="LoginID", all.x=TRUE)
+ppgis_sf_se <- merge(ppgis_sf, se_df, by.x="LogID", by.y="LoginID", all.x=TRUE) 
+  
 
 #Save dataset
 ppgis_sf_se %>% st_write("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.shp")
@@ -48,8 +26,11 @@ ppgis_df_se <- ppgis_sf_se %>% st_set_geometry(NULL) %>% as.data.frame()
 names(ppgis_df_se)[1:ncol(ppgis_df)] <- names(ppgis_df)
   write_csv(ppgis_df_se, "D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
 
-
+############################
 ### Correspondence analysis ---- 
+  require(FactoMineR)
+  require(factoextra)
+  
 #Correspondence analysis of user values, based on the proportion of their mapped values that fall into each category
 ca.data <- ppgis_sf %>% st_set_geometry(NULL) %>% 
   filter(category %in% c("biological", "cabin", "cleanwater", "cultureident", "gathering", 
