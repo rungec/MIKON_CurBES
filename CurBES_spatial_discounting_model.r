@@ -371,15 +371,16 @@ ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
             num_points = n())
 
 #summarise the data
-ppgis_sub_summary <- ppgis_sub %>%
-                      group_by(LogID) %>%
-                      mutate(age=mean(age)) %>%
+ppgis_sub_summary <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
+                      group_by(LogID, education, gender, income_NOK) %>%
+                      summarise(age=mean(age), 
+                             mean_dist=mean(dist2road_m)) %>%
                       ungroup() %>%
                       group_by(education, gender) %>%
                       summarise(n_people=n_distinct(LogID),
                                 mean_age=round(mean(age), 1),
                                 median_age=median(age),
-                                n_points=sum(num_points),
+                                n_points=n(),
                                 mean_dist=round(mean(mean_dist), 1))
 write.csv(ppgis_sub_summary, "Participant_characteristics_summary.csv", row.names=FALSE)
                                 
@@ -516,4 +517,4 @@ exp( ({AICc(g6)-AICc(g5)}/2) )
 #Trialed a model with logID as random intercept, model would not converge
 g3 <- lme4::glmer(logmean_dist ~ activity + education + (1|LogID), data = ppgis_sub2, family = gaussian(link = "log"))
 
-
+table(ppgis_df$activity)
