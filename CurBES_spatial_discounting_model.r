@@ -25,16 +25,16 @@ ppgis_df <- ppgis_df %>%
 
 ### Group the values categories into different activities to reduce the number of categories
 ppgis_df <- ppgis_df %>%  
-  mutate(activity = case_when(category %in% c("biological")~ "biological",
-                              category %in% c("undisturbnature")~ "undisturbnature", 
+  mutate(activity = case_when(category %in% c("biological")~ "Biological",
+                              category %in% c("undisturbnature")~ "Undisturbed nature", 
                               #category %in% c("income", "pasture")~ "grazing",
-                              category %in% c("gathering") ~ "gathering",
-                              category %in% c("cabin", "social", "cultureident", "specialplace")~ "culture",
-                              category %in% c("spiritual", "therapuetic")~ "spiritual and therapeutic",
-                              category %in% c("scenic")~ "scenic",
-                              category %in% c("recreation")~ "recreation",
-                              category %in% c("cleanwater")~ "cleanwater",
-                              category %in% c("hunt/fish")~ "hunt/fish"),
+                              category %in% c("gathering") ~ "Gathering",
+                              category %in% c("cabin", "social", "cultureident", "specialplace")~ "Culture",
+                              category %in% c("spiritual", "therapuetic")~ "Spiritual and therapeutic",
+                              category %in% c("scenic")~ "Scenic",
+                              category %in% c("recreation")~ "Recreation",
+                              category %in% c("cleanwater")~ "Cleanwater",
+                              category %in% c("hunt/fish")~ "Hunting or fishing"),
          income = case_when(income_NOK == "more600" ~ "more600",
                             income_NOK!= "more600" ~ "less600"))
 
@@ -77,34 +77,37 @@ ggsave("Variable_dist2road_plot_100mbins.png", p)
 
 #Plot distance by socioeconomics
 #by gender
-ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) 
+ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>% 
+  group_by(LogID, activity, gender, age, education, income_NOK) %>%
+  summarise(mean_dist = mean(dist2road_m))
+
 ppgis_sub$education <- factor(ppgis_sub$education, levels=c("primary", "secondary", "higher"))
-p <- ggplot(ppgis_sub, aes(y=dist2road_m/1000, x=activity))+
+p <- ggplot(ppgis_sub, aes(y=mean_dist/1000, x=activity))+
   geom_boxplot(aes(col=gender)) + 
-  ylab("Distance to road (km)") + xlab("") +
+  ylab("Mean distance to road (km)") + xlab("") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
-ggsave("PPGIS_distancetoroad_byactivity_and_gender.png", p)
+ggsave("PPGIS_meandistancetoroad_byactivity_and_gender.png", p)
 #by education
-p <- ggplot(ppgis_sub, aes(y=dist2road_m/1000, x=activity))+
+p <- ggplot(ppgis_sub, aes(y=mean_dist/1000, x=activity))+
   geom_boxplot(aes(col=education)) + 
-  ylab("Distance to road (km)") + xlab("") +
+  ylab("Mean distance to road (km)") + xlab("") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
-ggsave("PPGIS_distancetoroad_byactivity_and_education.png", p)
+ggsave("PPGIS_meandistancetoroad_byactivity_and_education.png", p)
 #by education and gender
-p <- ggplot(ppgis_sub, aes(y=dist2road_m/1000, x=education))+
+p <- ggplot(ppgis_sub, aes(y=mean_dist/1000, x=education))+
   geom_boxplot(aes(col=gender)) + 
-  ylab("Distance to road (km)") + xlab("Highest education") +
+  ylab("Mean distance to road (km)") + xlab("Highest education") +
   theme_minimal() 
-ggsave("PPGIS_distancetoroad_bygender_and_education.png", p)
+ggsave("PPGIS_meandistancetoroad_bygender_and_education.png", p)
 #by age
-p <- ggplot(ppgis_sub, aes(y=dist2road_m/1000, x=age))+
+p <- ggplot(ppgis_sub, aes(y=mean_dist/1000, x=age))+
   geom_boxplot(aes(group=age)) + 
-  ylab("Distance to road (km)") + xlab("Age") +
+  ylab("Mean distance to road (km)") + xlab("Age") +
   facet_wrap("gender") +
   theme_minimal()  
-ggsave("PPGIS_distancetoroad_byage_and_gender.png", p)
+ggsave("PPGIS_meandistancetoroad_byage_and_gender.png", p)
 
 #check the covariance of the continous variables
 ppgis_cor <- cor(ppgis_df[, c("dist2road_m", "dist2town_m", "dist2river_m", "dist2lake_m", "mindist2water_m", "PCA_comp1", "PCA_comp2", "PCA_comp3")], method="pearson")
@@ -188,7 +191,7 @@ sink()
 #https://datascienceplus.com/second-step-with-non-linear-regression-adding-predictors/
 #basically this fits separate nls models on each activity
 #This model gives exactly the same results as 
-#g1 <- glm(frequ ~ activity*dist2road_round - 1, data = ppgis_freq, family = gaussian(link = "log"), start = rep(0, 18))
+g1 <- glm(frequ ~ activity*dist2road_round - 1, data = ppgis_freq, family = gaussian(link = "log"), start = rep(0, 18))
 #but is easier to interpret the coefficients
 
 lf <- formula(frequ ~ exp(a+b*dist2road_round) | activity)
@@ -207,7 +210,7 @@ ppgis_freq_preds <- ppgis_freq %>% arrange(activity) %>%
                       mutate(pred3 = pred) %>%
                       add_residuals(mod3) %>%
                       add_predictions(mod2a) %>% 
-                      mutate(pred2a = pred)
+                      mutate(pred2a = pred) 
 
 sink("Model_of_dist2road_byactivity_nls.txt", append=TRUE)
 print(paste0("R-squared of model 3: ", rsq(ppgis_freq_preds$frequ, ppgis_freq_preds$pred3) ))
@@ -227,7 +230,8 @@ ggsave("Model_of_dist2road_byactivity_nls_residuals.png", p)
 p <- ggplot(ppgis_freq_preds, aes(pred3, resid)) +
   geom_point(col="grey50", pch=1) + geom_abline(slope=0,intercept=0) +
   xlab("Fitted values") + ylab("Model residuals") +
-  facet_wrap("activity", nrow=3, scales="free_x") 
+  facet_wrap("activity", nrow=3, scales="free_x") +
+  theme_minimal(16)
 ggsave("Model_of_dist2road_byactivity_nls_residuals_vs_fitted.png", p)
 
 #Plot frequency against fitted by activity
@@ -242,18 +246,41 @@ ggsave("Model_of_dist2road_byactivity_nls_frequ_vs_fitted.png", p)
 p <- ggplot(ppgis_freq_preds, aes(dist2road_round/1000, resid)) +
   geom_point(col="grey50", pch=1) + #geom_abline(slope=1,intercept=0) +
   xlab("Distance to road (km)") + ylab("Model residuals") +
-  facet_wrap("activity", nrow=3, scales="free") 
-ggsave("Model_of_dist2road_byactivity_nls_dist2road_vs_residuals.png", p)
+  facet_wrap("activity", nrow=3, scales="free") +
+  theme_minimal(16)
+ggsave("Model_of_dist2road_byactivity_nls_dist2road_vs_residuals.png", p,width=11, height=7, units="in")
+#Plot mean residuals against distance to road by activity
+ppgis_freq_preds_sub <- ppgis_freq_preds %>% 
+  filter(activity %in% c("Culture", "Recreation", "Scenic", "Hunting or fishing")) %>%
+  mutate(dist2road_100m = round(dist2road_round-45, digits=-2)) %>%
+  group_by(activity, dist2road_100m) %>%
+  summarise(mean_resid = mean(resid))
+p <- ggplot(ppgis_freq_preds_sub, aes(dist2road_100m/1000, mean_resid)) +
+  geom_point(col="grey50", pch=1) + geom_abline(slope=0,intercept=0) +
+  xlab("Distance to road (km)") + ylab("Mean of residuals") +
+  facet_wrap("activity", scales="free") +
+  theme_minimal(16)
+ggsave("Model_of_dist2road_byactivity_nls_dist2road_vs_meanresiduals.png", p,width=9, height=6, units="in")
 
 #Plot the model fit
 p <- ggplot(ppgis_freq_preds, aes(y=frequ, x=dist2road_round/1000, group=activity))+
-  geom_point() +
+  geom_point(col="grey70") +
   geom_line(aes(y=pred3), col="red") +
   #geom_line(aes(y=pred1), col="blue") +
   facet_wrap("activity", scales = "free_y") +
   xlab("Distance to road (km)") + ylab("Frequency of mapped points") +
-  theme_minimal() 
-ggsave("Model_of_dist2road_byactivity_nls_fit.png", p)
+  theme_minimal(16) 
+ggsave("Model_of_dist2road_byactivity_nls_fit.png", p, width=11, height=7, units="in")
+#Plot the model fit zoomed
+p <- ggplot(ppgis_freq_preds, aes(y=frequ, x=dist2road_round, group=activity))+
+  geom_point(col="grey70") +
+  geom_line(aes(y=pred3), col="red") +
+  xlim(0,1000) +
+  #geom_line(aes(y=pred1), col="blue") +
+  facet_wrap("activity", scales = "free_y") +
+  xlab("Distance to road (m)") + ylab("Frequency of mapped points") +
+  theme_minimal(16) 
+ggsave("Model_of_dist2road_byactivity_nls_fit_zoom.png", p, width=11, height=7, units="in")
 
 #Could also do kolmogorov-smirnov test
 subdf <- ppgis_freq_preds %>% filter(activity=="recreation")
@@ -393,13 +420,41 @@ mod_min <- step(mod_full)
 print(summary(mod_min))
 sink()
 
-x <-as.data.frame.table(summary(mod_min)$coefficients) %>% spread(key = Var2, value = Freq)
+#Do my own model selection, keeping interaction
+
+#all people
+mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub, family = gaussian)
+g2 <- glm(logmean_dist ~ activity*gender + education + age, data = ppgis_sub, family = gaussian)
+g3 <- glm(logmean_dist ~ activity*gender + education + income, data = ppgis_sub, family = gaussian)
+g4 <- glm(logmean_dist ~ activity*gender + education, data = ppgis_sub, family = gaussian)
+g5 <- glm(logmean_dist ~ activity*gender, data = ppgis_sub, family = gaussian)
+g6 <- glm(logmean_dist ~ activity + gender, data = ppgis_sub, family = gaussian)
+g7 <- glm(logmean_dist ~ activity + gender + education, data = ppgis_sub, family = gaussian)
+g8 <- glm(logmean_dist ~ activity + gender + education + age, data = ppgis_sub, family = gaussian)
+g9 <- glm(logmean_dist ~ activity + gender + education + income, data = ppgis_sub, family = gaussian)
+g10 <- glm(logmean_dist ~ activity + education + income, data = ppgis_sub, family = gaussian)
+g11 <- glm(logmean_dist ~ activity + education , data = ppgis_sub, family = gaussian)
+g12 <- glm(logmean_dist ~ activity , data = ppgis_sub, family = gaussian)
+g13 <- glm(logmean_dist ~ activity*education + gender, data = ppgis_sub, family = gaussian)
+
+
+a <- do.call(rbind, lapply(list(mod_full, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13), function(x) {
+  df <- data.frame(modelform=do.call(paste0, as.list(as.character(formula(x)[c(2,1,3)]))), AIC=round(AIC(x), 1), AICc=round(AICc(x), 1), BIC=round(BIC(x), 1), stringsAsFactors=FALSE)
+  return(df)
+}))
+write.csv(a, "Model_of_dist2road_bysocioecon_glm_manualmodelselection.csv", row.names=FALSE)
+
+sink("Model_of_dist2road_bysocioecon_glm.txt", append=TRUE)
+print(summary(g11))
+sink()
+
+x <-as.data.frame.table(summary(g11)$coefficients) %>% spread(key = Var2, value = Freq)
 write.csv(x, "Model_of_dist2road_bysocioecon_glm_coefs.csv", row.names=FALSE)
 
 #plot the model checks
-png("Model_of_dist2road_bysocioecon_glm_check_minmod.png", width=9, height=7, units="in", res=150)
+png("Model_of_dist2road_bysocioecon_glm_check_parsmod.png", width=9, height=7, units="in", res=150)
 par(mfrow=c(2,2))
-plot(mod_min)
+plot(g11)
 dev.off()
 
 
@@ -409,21 +464,21 @@ ppgis_sub_preds <- ppgis_sub %>%
   add_residuals(mod_full) %>%
   mutate(pred_modfull=pred,
          resid_modfull=resid) %>%
-  add_predictions(mod_min) %>% 
-  add_residuals(mod_min) %>%
-  mutate(pred_modmin=pred,
-         resid_modmin=resid)
+  add_predictions(g11) %>% 
+  add_residuals(g11) %>%
+  mutate(pred_parsmod=pred,
+         resid_parsmod=resid)
 
 ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
   geom_boxplot(aes(col=gender)) + 
   ylab("Mean distance to road (km)") + xlab("") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave("Model_of_dist2road_bysocioecon_glm_fullmodel.png", width=7.77, height=4.34, units="in")
-ggplot(ppgis_sub_preds, aes(y=exp(pred_modmin)/1000, x=activity))+
+ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
   geom_boxplot(aes(col=gender)) + 
   ylab("Mean distance to road (km)") + xlab("") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_minmodel.png", width=7.77, height=4.34, units="in")
+ggsave("Model_of_dist2road_bysocioecon_glm_parsmodel.png", width=7.77, height=4.34, units="in")
 
 
 ### Drop primary educated people from the model ----
@@ -438,42 +493,7 @@ mod_min <- step(mod_full)
 print(summary(mod_min))
 sink()
 
-#x <-as.data.frame.table(summary(mod_min)$coefficients) %>% spread(key = Var2, value = Freq)
-#write.csv(x, "Model_of_dist2road_bysocioecon_glm_coefs_dropprimaryeducatedmen.csv", row.names=FALSE)
-
-#plot the model checks
-png("Model_of_dist2road_bysocioecon_glm_check_minmod_dropprimaryeducated.png", width=9, height=7, units="in", res=150)
-par(mfrow=c(2,2))
-plot(mod_min)
-dev.off()
-
-
-#plot the predictions from the two models
-ppgis_sub_preds <- ppgis_sub2 %>% 
-  add_predictions(mod_full) %>% 
-  add_residuals(mod_full) %>%
-  mutate(pred_modfull=pred,
-         resid_modfull=resid) %>%
-  add_predictions(mod_min) %>% 
-  add_residuals(mod_min) %>%
-  mutate(pred_modmin=pred,
-         resid_modmin=resid)
-
-ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_fullmodel.png", width=7.77, height=4.34, units="in")
-ggplot(ppgis_sub_preds, aes(y=exp(pred_modmin)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_minmodel.png", width=7.77, height=4.34, units="in")
-
-
-############################
-#Do my own model selection, keeping interaction
-
+#manual model selection, without primary educated people
 mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub2, family = gaussian)
 g2 <- glm(logmean_dist ~ activity*gender + age + income, data = ppgis_sub2, family = gaussian)
 g3 <- glm(logmean_dist ~ activity*gender + income, data = ppgis_sub2, family = gaussian)
@@ -485,8 +505,8 @@ g8 <- glm(logmean_dist ~ activity + gender + income, data = ppgis_sub2, family =
 g9 <- glm(logmean_dist ~ activity + gender + age + income, data = ppgis_sub2, family = gaussian)
 g10 <- glm(logmean_dist ~ activity + age + income, data = ppgis_sub2, family = gaussian)
 g11 <- glm(logmean_dist ~ activity + age , data = ppgis_sub2, family = gaussian)
-g12 <- glm(logmean_dist ~ activity , data = ppgis_sub2, family = gaussian)
-g13 <- glm(logmean_dist ~ activity*gender + education*age + income, data = ppgis_sub, family = gaussian)
+g12 <- glm(logmean_dist ~ activity, data = ppgis_sub2, family = gaussian)
+g13 <- glm(logmean_dist ~ activity*gender + education*age + income, data = ppgis_sub2, family = gaussian)
 
 
 a <- do.call(rbind, lapply(list(mod_full, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12), function(x) {
@@ -495,6 +515,44 @@ a <- do.call(rbind, lapply(list(mod_full, g2, g3, g4, g5, g6, g7, g8, g9, g10, g
 }))
 write.csv(a, "Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_manualmodelselection.csv", row.names=FALSE)
 
+sink("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated.txt", append=TRUE)
+print(summary(g12))
+sink()
+
+#x <-as.data.frame.table(summary(mod_min)$coefficients) %>% spread(key = Var2, value = Freq)
+#write.csv(x, "Model_of_dist2road_bysocioecon_glm_coefs_dropprimaryeducatedmen.csv", row.names=FALSE)
+
+#plot the model checks
+png("Model_of_dist2road_bysocioecon_glm_check_parsmod_dropprimaryeducated.png", width=9, height=7, units="in", res=150)
+par(mfrow=c(2,2))
+plot(g12)
+dev.off()
+
+
+#plot the predictions from the two models
+ppgis_sub_preds <- ppgis_sub2 %>% 
+  add_predictions(mod_full) %>% 
+  add_residuals(mod_full) %>%
+  mutate(pred_modfull=pred,
+         resid_modfull=resid) %>%
+  add_predictions(g12) %>% 
+  add_residuals(g12) %>%
+  mutate(pred_parsmod=pred,
+         resid_parsmod=resid)
+
+ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
+  geom_boxplot(aes(col=gender)) + 
+  ylab("Mean distance to road (km)") + xlab("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_fullmodel.png", width=7.77, height=4.34, units="in")
+ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
+  geom_boxplot(aes(col=gender)) + 
+  ylab("Mean distance to road (km)") + xlab("") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_parsmodel.png", width=7.77, height=4.34, units="in")
+
+
+############################
 exp( ({AICc(g6)-AICc(g5)}/2) )
 #model g6 is 0.0364 times as probable as mod g5 to minimise the information loss
 
@@ -518,3 +576,21 @@ exp( ({AICc(g6)-AICc(g5)}/2) )
 g3 <- lme4::glmer(logmean_dist ~ activity + education + (1|LogID), data = ppgis_sub2, family = gaussian(link = "log"))
 
 table(ppgis_df$activity)
+
+
+
+#################################
+##Explicitly model development preference
+
+#ppgis_sf <- st_read("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis", "Curbes_ppgis_plus_environment_socioeconomic")
+ppgis_df <- read_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
+
+### Drop preferences
+ppgis_devpref <- ppgis_df %>%  
+  filter(category %in% c("+development", "-development", "+tourism", "-tourism")) %>% droplevels() %>%
+  drop_na(gender, age, education, income_NOK)
+
+#463 points, 163 people, 130 with all demographic info
+#146 with gender info
+
+
