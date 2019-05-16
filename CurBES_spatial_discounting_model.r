@@ -6,6 +6,7 @@ require(tidyverse)
 require(ggplot2)
 require(modelr) #add_predictions
 #require(mgcv) #gams
+require(lme4) #glmer
 
 setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
@@ -571,11 +572,18 @@ exp( ({AICc(g6)-AICc(g5)}/2) )
 #   facet_wrap("activity", nrow=3, scales="free") 
 # ggsave("Model_of_dist2road_bysocioecon_glm_logmeandist2road_vs_residuals.png", p)
  
+ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
+          mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
+          mutate(rounddist2road = round(dist2road_m+0.5, 0),
+                 logdist2road = log(rounddist2road)) 
 
+#becasuse we have grouped distance (to 1m) 
 #Trialed a model with logID as random intercept, model would not converge
-g3 <- lme4::glmer(logmean_dist ~ activity + education + (1|LogID), data = ppgis_sub2, family = gaussian(link = "log"))
-
-table(ppgis_df$activity)
+g1 <- lmer(logdist2road ~ activity*gender + age + income + education + (1|LogID), data = ppgis_sub, family=gaussian(link="identity"))
+g2 <- glmer(dist2road_m ~ activity + gender + age + income + education + (1|LogID), data = ppgis_sub, family=gaussian(link="log"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
+g3 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=Gamma(link="identity"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
+g4 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
+g5 <- glmer(rounddist2road ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
 
 
 
