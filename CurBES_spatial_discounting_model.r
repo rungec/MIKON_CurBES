@@ -7,6 +7,7 @@ require(ggplot2)
 require(modelr) #add_predictions
 #require(mgcv) #gams
 require(lme4) #glmer
+require(nlme) #gnls
 
 setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
@@ -120,7 +121,7 @@ dev.off()
 ### MODEL DIST2ROAD by ES CATEGORY ----
 #Is there any difference in the distance from roads at which points representing different values are mapped? 
 
-#First we run a model to show that distance from road explains most of the variance in the data
+#First we run a model at 100m to show that distance from road explains most of the variance in the data
 #Set up data
 breaktbl <- data.frame(dist2road_round = rep(seq(0, round(max(ppgis_df$dist2road_m), digits=-2), 100), each=length(unique(ppgis_df$activity))),
                         activity=rep(unique(ppgis_df$activity)), stringsAsFactors=FALSE)
@@ -135,7 +136,7 @@ ppgis_freq <- ppgis_df %>%
           activity = as.factor(activity))
 
 #model distance to road
-mod2 <- nls(frequ ~ exp(a+b*dist2road_round), data=ppgis_freq, start=list(a=0, b=0))
+mod2 <- gnls(frequ ~ exp(a+b*dist2road_round), data=ppgis_freq, start=list(a=0, b=0))
 ppgis_freq <- ppgis_freq %>% add_predictions(mod2) %>% add_residuals(mod2)
 
 sink("Model_of_dist2road_byactivity_nls_100m.txt")
@@ -156,15 +157,15 @@ p <- ggplot(ppgis_freq, aes(y=frequ, x=dist2road_round/1000))+
   theme_minimal()
 ggsave("Model_of_dist2road_nls_100m_fit.png", p)
 
-
+#Model at 10m 
 #Option 1: split landscape into plots (based on distance from road) and count frequency of points in each plot
 #We ignore other environmental variables as we know that accessibility is by far the biggest driver - environmental variables only account for a small proportion of the variation
 #Set up data
-breaktbl <- data.frame(dist2road_round = rep(seq(0, round(max(ppgis_df$dist2road_m), digits=-1), 10), each=length(unique(ppgis_df$activity))),
+breaktbl <- data.frame(dist2road_round = rep(seq(10, round(max(ppgis_df$dist2road_m), digits=-1), 10), each=length(unique(ppgis_df$activity))),
                        activity=rep(unique(ppgis_df$activity)), stringsAsFactors=FALSE)
 
 ppgis_freq <- ppgis_df %>% 
-              mutate(dist2road_round = round(dist2road_m-4.5, digits=-1)) %>% #round to nearest 10m (9m=>0m, 10m=>10m)
+              mutate(dist2road_round = round(dist2road_m+5.5, digits=-1)) %>% #round to nearest 10m (9m=>10m, 14m=>20m)
               group_by(activity, dist2road_round) %>%
               summarise(frequ = n()) %>%
               ungroup() %>%
@@ -179,7 +180,7 @@ chisq.test(ppgis_freq$frequ, ppgis_freq$activity)
 sink()
 #they do.
 
-#Model 2 nls 
+#Model 2 nls at 10m
 #first run a model without activity to determine the starting parameters a and b
 mod2a <- nls(frequ ~ exp(a+b*dist2road_round), data=ppgis_freq, start=list(a=0, b=0))
 sink("Model_of_dist2road_byactivity_nls.txt", append=TRUE)
@@ -188,19 +189,20 @@ summary(mod2a)
 print(paste0("Deviance (RSS): ", deviance(mod2a)))
 sink()
 
-#Model 3 non-linear least-squares 
+#Model 3 generalised non-linear least-squares (ignoring variance structure)
 #https://datascienceplus.com/second-step-with-non-linear-regression-adding-predictors/
 #basically this fits separate nls models on each activity
 #This model gives exactly the same results as 
-g1 <- glm(frequ ~ activity*dist2road_round - 1, data = ppgis_freq, family = gaussian(link = "log"), start = rep(0, 18))
+#g1 <- glm(frequ ~ activity*dist2road_round - 1, data = ppgis_freq, family = gaussian(link = "log"), start = rep(0, 18))
 #but is easier to interpret the coefficients
 
-lf <- formula(frequ ~ exp(a+b*dist2road_round) | activity)
-mod3 <- nlme::nlsList(lf, data=ppgis_freq, start=list(a=coef(mod2a)[1], b=coef(mod2a)[2]))
+lf <- formula(frequ ~ exp(a+b*dist2road_round)|activity)
+mod3 <- nlsList(lf, data=ppgis_freq, start=coef(mod2a))
 sink("Model_of_dist2road_byactivity_nls.txt", append=TRUE)
 print("NLS model of dist2road by activity")
 summary(mod3)
 sink()
+
 x <-as.data.frame.table(summary(mod3)$coefficients) %>% spread(key = Var2, value = Freq)
 names(x)[1:2] <- c("activity", "coef")
 write.csv(x, "Model_of_dist2road_byactivity_nls_coefs.csv", row.names=FALSE)
@@ -210,6 +212,7 @@ ppgis_freq_preds <- ppgis_freq %>% arrange(activity) %>%
                       add_predictions(mod3) %>% 
                       mutate(pred3 = pred) %>%
                       add_residuals(mod3) %>%
+                      mutate(resid_std = resid(mod3, type="pearson")) %>%
                       add_predictions(mod2a) %>% 
                       mutate(pred2a = pred) 
 
@@ -234,14 +237,28 @@ p <- ggplot(ppgis_freq_preds, aes(pred3, resid)) +
   facet_wrap("activity", nrow=3, scales="free_x") +
   theme_minimal(16)
 ggsave("Model_of_dist2road_byactivity_nls_residuals_vs_fitted.png", p)
+#plot(mod3, resid(.) ~ fitted(.) | activity, abline=0)
+p <- ggplot(ppgis_freq_preds, aes(pred3, resid_std)) +
+  geom_point(col="grey50", pch=1) + geom_abline(slope=0,intercept=0) +
+  xlab("Fitted values") + ylab("Standardised pearson residuals") +
+  facet_wrap("activity", nrow=3, scales="free_x") +
+  theme_minimal(16)
+ggsave("Model_of_dist2road_byactivity_nls_stdresiduals_vs_fitted_byactivity.png", p, width=8, height=6, units="in")
+p <- ggplot(ppgis_freq_preds, aes(pred3, resid_std)) +
+  geom_point(col="grey50", pch=1) + geom_abline(slope=0,intercept=0) +
+  xlab("Fitted values") + ylab("Standardised pearson residuals") +
+  #facet_wrap("activity", nrow=3, scales="free_x") +
+  theme_minimal(16)
+ggsave("Model_of_dist2road_byactivity_nls_stdresiduals_vs_fitted.png", p, width=7, height=6, units="in")
 
 #Plot frequency against fitted by activity
 #plot(mod3, frequ ~ fitted(.) | activity, abline = c(0,1), col="black")
 p <- ggplot(ppgis_freq_preds, aes(pred3, frequ)) +
   geom_point(col="grey50", pch=1) + geom_abline(slope=1,intercept=0) +
   xlab("Fitted values") + ylab("Frequency") +
-  facet_wrap("activity", nrow=3, scales="free") 
-ggsave("Model_of_dist2road_byactivity_nls_frequ_vs_fitted.png", p)
+  facet_wrap("activity", nrow=3, scales="free") +
+  theme_minimal(16)
+ggsave("Model_of_dist2road_byactivity_nls_frequ_vs_fitted.png", p, width=8, height=6, units="in")
 
 #Plot residuals against distance to road by activity
 p <- ggplot(ppgis_freq_preds, aes(dist2road_round/1000, resid)) +
@@ -293,6 +310,46 @@ ks.test(subdf$pred3, subdf$pred2a)
 #also it doesn't take into account the order of frequency points
 subdf2 <- ppgis_freq_preds %>% filter(activity=="cleanwater")
 ks.test(subdf$pred3, subdf2$pred3)
+
+### TRIAL GNLS model accounting for heteroskedascicity ----
+#categorical variables cant be included so we run a separate model for each activity
+lf <- formula(frequ ~ exp(a+b*dist2road_round))
+models <- ppgis_freq %>% group_by(activity) %>%
+  do(mod3 = gnls(lf, data=., start=coef(mod2a), control=gnlsControl(maxIter=1000, nlsMaxIter = 100, nlsTol = 0.1)))
+do(mod3b = gnls(lf, data=., start=coef(mod2a), control=gnlsControl(maxIter=1000, nlsMaxIter = 100, nlsTol = 0.1), weights=varFixed(~dist2road_round)))
+model_coef <- models %>% do(data.frame(activity=.$activity,
+                                       var_mod3 = names(coef(.$mod3)),
+                                       coef_mod3 = coef(summary(.$mod3)),
+                                       var_mod3b = names(coef(.$mod3b)),
+                                       coef_mod3b = coef(summary(.$mod3b))))
+model_summary <- models %>% do(data.frame(activity=.$activity,
+                                          AIC_mod3 = summary(.$mod3)$AIC,
+                                          AIC_mod3b = summary(.$mod3b)$AIC,
+                                          BIC_mod3 = summary(.$mod3)$BIC,
+                                          BIC_mod3b = summary(.$mod3b)$BIC,
+                                          logLik_mod3 = summary(.$mod3)$logLik, 
+                                          logLik_mod3b = summary(.$mod3b)$logLik))
+
+model_preds <- models %>% do(data.frame(activity=.$activity,
+                                        pred_3=fitted(.$mod3),
+                                        residuals_3=residuals(.$mod3),  
+                                        pred_3b=fitted(.$mod3b),
+                                        residuals_3b=residuals(.$mod3b) )) %>% 
+  bind_cols(arrange(ppgis_freq, activity) ) %>%
+  add_predictions(mod2a) %>% 
+  mutate(pred_2a = pred)
+
+model_rsq <- model_preds %>% group_by(activity) %>%
+  summarise(rsq_mod2a=rsq(frequ, pred_2a),
+            rsq_mod3=rsq(frequ, pred_3),
+            rsq_mod3b=rsq(frequ, pred_3b))
+
+compare <- models %>% do(aov = anova(.$mod_3, .$mod_3b)) %>%
+  summarise(activity=.$activity,
+            p.value = aov$`Pr(>F)`)
+
+
+
 
 ###############################
 ### MODEL DIST2ROAD by SOCIOECONOMIC CLASS ----
@@ -583,7 +640,7 @@ g1 <- lmer(logdist2road ~ activity*gender + age + income + education + (1|LogID)
 g2 <- glmer(dist2road_m ~ activity + gender + age + income + education + (1|LogID), data = ppgis_sub, family=gaussian(link="log"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
 g3 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=Gamma(link="identity"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
 g4 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
-g5 <- glmer(rounddist2road ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
+g5 <- glmer(rounddist2road ~ activity + gender  + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
 
 
 
