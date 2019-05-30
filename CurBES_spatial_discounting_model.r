@@ -478,6 +478,15 @@ mod_min <- step(mod_full)
 print(summary(mod_min))
 sink()
 
+
+
+#model how far to where people live include as a covariate/ or as the y value
+#model distance to town. can use their postcode and how far it is to their town.
+#model distance to industry
+#model odds ratio of preferences vs distance to stuff.
+lmer()
+
+
 #Do my own model selection, keeping interaction
 
 #all people
@@ -658,4 +667,5 @@ ppgis_devpref <- ppgis_df %>%
 #463 points, 163 people, 130 with all demographic info
 #146 with gender info
 
-
+#dist2stuff ~ proportion of points mapped against development
+#expect that people with increasing proportion would map values further from roads
