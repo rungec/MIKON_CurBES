@@ -6,8 +6,11 @@ require(tidyverse)
 require(ggplot2)
 require(modelr) #add_predictions
 #require(mgcv) #gams
-require(lme4) #glmer
-require(nlme) #gnls
+require(lme4) #lmer
+#require(nlme) #gnls
+require(DHARMa)
+require(piecewiseSEM)
+require(sjPlot) #lme plots and diagnostics
 
 setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
@@ -360,101 +363,6 @@ compare <- models %>% do(aov = anova(.$mod_3, .$mod_3b)) %>%
 #then we look at the differences in the distance from road that they map different values
 #She found that men were significantly higher than women to be in favor of activities
 #and that age (favor decreased by age) and education (higher=less in favor) had marginally significant effects
-
-#Model 4 non-linear least-squares - gender only
-#https://datascienceplus.com/second-step-with-non-linear-regression-adding-predictors/
-#basically this fits separate nls models on each gender
-#Set up data
-breaktbl <- data.frame(dist2road_round = rep(seq(0, round(max(ppgis_df$dist2road_m), digits=-1), 10), each=length(unique(ppgis_df$gender))),
-                       gender=rep(unique(ppgis_df$gender)), stringsAsFactors = FALSE)
-
-ppgis_freq <- ppgis_df %>% 
-  mutate(dist2road_round = round(dist2road_m-4.5, digits=-1)) %>% #round to nearest 10m (9m=>0m, 10m=>10m)
-  group_by(gender, dist2road_round) %>%
-  summarise(frequ = n()) %>%
-  ungroup() %>%
-  right_join(breaktbl) %>%
-  mutate(frequ = ifelse(is.na(frequ), 0, frequ),
-         gender = as.factor(gender)) %>%
-  filter(!is.na(gender)) 
-
-lf <- formula(frequ ~ exp(a+b*dist2road_round) | gender)
-mod4 <- nlme::nlsList(lf, data=ppgis_freq, start=list(a=0, b=0))
-sink("Model_of_dist2road_bygender_nls.txt")
-print("NLS model of dist2road by gender")
-summary(mod4)
-sink()
-x <-as.data.frame.table(summary(mod4)$coefficients) %>% spread(key = Var2, value = Freq)
-names(x)[1:2] <- c("gender", "coef")
-write.csv(x, "Model_of_dist2road_bygender_nls_coefs.csv", row.names=FALSE)
-
-### Plot model 4 ----
-ppgis_freq_preds <- ppgis_freq %>% 
-  arrange(gender) %>%
-  add_predictions(mod4) %>% 
-  add_residuals(mod4) 
-
-sink("Model_of_dist2road_bygender_nls.txt", append=TRUE)
-print(paste0("R-squared of model 4: ", rsq(ppgis_freq_preds$frequ, ppgis_freq_preds$pred) ))
-sink()
-
-#Plot the model fit
-p <- ggplot(ppgis_freq_preds, aes(y=frequ, x=dist2road_round/1000, group=gender))+
-  geom_point() +
-  geom_line(aes(y=pred, col=gender)) +
-  xlab("Distance to road (km)") + ylab("Frequency of mapped points") +
-  theme_minimal()
-ggsave("Model_of_dist2road_bygender_nls_fit.png", p)
-
-#Is there still a difference after we drop primary educated?
-ppgis_freq <- ppgis_df %>% filter(education!="primary") %>%
-  mutate(dist2road_round = round(dist2road_m-4.5, digits=-1)) %>% #round to nearest 10m (9m=>0m, 10m=>10m)
-  group_by(gender, dist2road_round) %>%
-  summarise(frequ = n()) %>%
-  ungroup() %>%
-  right_join(breaktbl) %>%
-  mutate(frequ = ifelse(is.na(frequ), 0, frequ),
-         gender = as.factor(gender)) %>%
-  filter(!is.na(gender))   
-
-lf <- formula(frequ ~ exp(a+b*dist2road_round) | gender)
-mod5 <- nlme::nlsList(lf, data=ppgis_freq, start=list(a=0, b=0))
-sink("Model_of_dist2road_bygender_nls_noprimaryeducated.txt")
-print("NLS model of dist2road by gender")
-summary(mod5)
-sink()
-
-ppgis_freq_preds <- ppgis_freq %>% 
-  arrange(gender) %>%
-  add_predictions(mod5) %>% 
-  add_residuals(mod5) 
-
-sink("Model_of_dist2road_bygender_nls_noprimaryeducated.txt", append=TRUE)
-print(paste0("R-squared of model 5: ", rsq(ppgis_freq_preds$frequ, ppgis_freq_preds$pred) ))
-sink()
-
-#Plot the model fit
-p <- ggplot(ppgis_freq_preds, aes(y=frequ, x=dist2road_round/1000, group=gender))+
-  geom_point() +
-  geom_line(aes(y=pred, col=gender)) +
-  xlab("Distance to road (km)") + ylab("Frequency of mapped points") +
-  theme_minimal()
-ggsave("Model_of_dist2road_bygender_nls_noprimaryeducated_fit.png", p)
-
-#############################################
-### GLM model of dist2road by socioeconomics ----
-#dist2road_m ~ activity*gender*age + education + income
-#set up data
-ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>% 
-  mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
-  group_by(LogID, activity, gender, age, education, income) %>%
-  summarise(median_dist = median(dist2road_m),
-            mean_dist = mean(dist2road_m),
-            logmean_dist = log(mean(dist2road_m)),
-            quant_25 = quantile(dist2road_m)[2],
-            quant_75 = quantile(dist2road_m)[4], 
-            num_points = n())
-
 #summarise the data
 ppgis_sub_summary <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
                       group_by(LogID, education, gender, income_NOK) %>%
@@ -468,61 +376,104 @@ ppgis_sub_summary <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>
                                 n_points=n(),
                                 mean_dist=round(mean(mean_dist), 1))
 write.csv(ppgis_sub_summary, "Participant_characteristics_summary.csv", row.names=FALSE)
-                                
 
-#full model and backwards stepwise model selection
-sink("Model_of_dist2road_bysocioecon_glm.txt")
-mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub, family = gaussian)
-print(summary(mod_full))
-mod_min <- step(mod_full)
-print(summary(mod_min))
-sink()
+#############################################
+### Linear mixed effects model of dist2road by socioeconomics ----
+#full model = dist2road_m ~ activity*gender + age + education + income, with LogID as a random effect
 
+ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
+  mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
+  mutate(rounddist2road = round(dist2road_m+0.5, 0), #so dist starts at 1 not zero thus able to be logged
+         logdist2road = log(rounddist2road)) 
 
+#LME with logID as random intercept
+#Ben Bolker one of the guys behind the lme4 package says that you should put the variables that you control for first in the model
+#and then the variables that are the main focus (activty*gender in this case) should be last
+g1 <- lmer(logdist2road~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub)
+g1_1 <- lmer(dist2road_m~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub) #just tried without logtransformation
 
-#model how far to where people live include as a covariate/ or as the y value
-#model distance to town. can use their postcode and how far it is to their town.
-#model distance to industry
-#model odds ratio of preferences vs distance to stuff.
-lmer()
+#plot residuals assesses how well the predicted and the observed values fit across predictors. The actual (observed) values have a coloured ???ll, while the predicted values have a solid outline without ???lling.
+#https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf
+plot_residuals(g1)
 
+# plot random effects 
+plot_model(g1, type = "re")
 
-#Do my own model selection, keeping interaction
+# plot marginal effects 
+plot_model(g1, type = "pred", terms = "education")
+plot_model(g1, type = "pred", terms = "age")
+plot_model(g1, type = "pred", terms = "gender")
+plot_model(g1, type = "pred", terms = "income")
+plot_model(g1, type = "pred", terms = "activity")
 
-#all people
-mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub, family = gaussian)
-g2 <- glm(logmean_dist ~ activity*gender + education + age, data = ppgis_sub, family = gaussian)
-g3 <- glm(logmean_dist ~ activity*gender + education + income, data = ppgis_sub, family = gaussian)
-g4 <- glm(logmean_dist ~ activity*gender + education, data = ppgis_sub, family = gaussian)
-g5 <- glm(logmean_dist ~ activity*gender, data = ppgis_sub, family = gaussian)
-g6 <- glm(logmean_dist ~ activity + gender, data = ppgis_sub, family = gaussian)
-g7 <- glm(logmean_dist ~ activity + gender + education, data = ppgis_sub, family = gaussian)
-g8 <- glm(logmean_dist ~ activity + gender + education + age, data = ppgis_sub, family = gaussian)
-g9 <- glm(logmean_dist ~ activity + gender + education + income, data = ppgis_sub, family = gaussian)
-g10 <- glm(logmean_dist ~ activity + education + income, data = ppgis_sub, family = gaussian)
-g11 <- glm(logmean_dist ~ activity + education , data = ppgis_sub, family = gaussian)
-g12 <- glm(logmean_dist ~ activity , data = ppgis_sub, family = gaussian)
-g13 <- glm(logmean_dist ~ activity*education + gender, data = ppgis_sub, family = gaussian)
+#plot diagnostic plots for lmer For linear (mixed) models, plots for multicollinearity-check (Variance In???ation Factors), 
+#QQ-plots, checks for normal distribution of residuals and homoscedasticity (constant variance of residuals) are shown https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf.
+p<-plot_model(g1, type = "diag")
 
+p[[1]]
+p[[2]]
+p[[3]]
+p[[4]]
 
-a <- do.call(rbind, lapply(list(mod_full, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13), function(x) {
-  df <- data.frame(modelform=do.call(paste0, as.list(as.character(formula(x)[c(2,1,3)]))), AIC=round(AIC(x), 1), AICc=round(AICc(x), 1), BIC=round(BIC(x), 1), stringsAsFactors=FALSE)
+# recommended function to use for rsquared calculations of mixed models in library piecewiseSEM, gives both the variance explained by the fixed effect alone and 
+#the fixed and random component together - the whole model https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5970551/ 
+rsquared(g1)
+
+#model selection
+g1 <- lmer(logdist2road ~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub)
+g2 <- lmer(logdist2road ~ education + age + activity*gender + (1|LogID), data = ppgis_sub)
+g3 <- lmer(logdist2road ~ education + income + activity*gender + (1|LogID), data = ppgis_sub)
+g4 <- lmer(logdist2road ~ education + activity*gender + (1|LogID), data = ppgis_sub)
+g5 <- lmer(logdist2road ~ activity*gender + (1|LogID), data = ppgis_sub)
+g6 <- lmer(logdist2road ~ activity + gender + (1|LogID), data = ppgis_sub)
+g7 <- lmer(logdist2road ~ activity + gender + education + (1|LogID), data = ppgis_sub)
+g8 <- lmer(logdist2road ~ activity + gender + education + age + (1|LogID), data = ppgis_sub)
+g9 <- lmer(logdist2road ~ activity + gender + education + age + income + (1|LogID), data = ppgis_sub)
+g10 <- lmer(logdist2road ~ activity + education + income + (1|LogID), data = ppgis_sub)
+g11 <- lmer(logdist2road ~ activity + education + age + (1|LogID), data = ppgis_sub)
+g12 <- lmer(logdist2road ~ activity + age + (1|LogID), data = ppgis_sub)
+g13 <- lmer(logdist2road ~ activity + (1|LogID), data = ppgis_sub)
+g14 <- lmer(logdist2road ~ activity + education*gender + (1|LogID), data = ppgis_sub)
+
+a <- do.call(rbind, lapply(list(g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14), function(x) {
+  df <- data.frame(modelform=do.call(paste0, as.list(as.character(formula(x)))), AIC=round(AIC(x), 1), AICc=round(AICc(x), 1), BIC=round(BIC(x), 1), r_squared=round(rsquared(x), 4), stringsAsFactors=FALSE)
   return(df)
 }))
-write.csv(a, "Model_of_dist2road_bysocioecon_glm_manualmodelselection.csv", row.names=FALSE)
+# rsquared() is recommended function to use for rsquared calculations of mixed models in library piecewiseSEM, gives both the variance explained by the fixed effect alone and 
+#the fixed and random component together - the whole model https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5970551/ 
+exp( ({AICc(g6)-AICc(g5)}/2) )
+#e.g. model g6 is 0.0364 times as probable as mod g5 to minimise the information loss
 
-sink("Model_of_dist2road_bysocioecon_glm.txt", append=TRUE)
-print(summary(g11))
+write.csv(a, "Model_of_dist2road_bysocioecon_lme_manualmodelselection.csv", row.names=FALSE)
+
+sink("Model_of_dist2road_bysocioecon_lme.txt", append=TRUE)
+print(summary(g13))
 sink()
 
 x <-as.data.frame.table(summary(g11)$coefficients) %>% spread(key = Var2, value = Freq)
-write.csv(x, "Model_of_dist2road_bysocioecon_glm_coefs.csv", row.names=FALSE)
+write.csv(x, "Model_of_dist2road_bysocioecon_lme_coefs.csv", row.names=FALSE)
 
-#plot the model checks
-png("Model_of_dist2road_bysocioecon_glm_check_parsmod.png", width=9, height=7, units="in", res=150)
+#plot the model diagnostics
+png("Model_of_dist2road_bysocioecon_lme_check_parsmod.png", width=9, height=7, units="in", res=150)
 par(mfrow=c(2,2))
-plot(g11)
+#plot diagnostic plots for lmer For linear (mixed) models, plots for multicollinearity-check (Variance In???ation Factors), 
+#QQ-plots, checks for normal distribution of residuals and homoscedasticity (constant variance of residuals) are shown https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf.
+plot_model(g13, type = "diag")
 dev.off()
+
+#plot residuals assesses how well the predicted and the observed values fit across predictors. The actual (observed) values have a coloured ???ll, while the predicted values have a solid outline without ???lling.
+#https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf
+plot_residuals(g1)
+
+# plot random effects 
+plot_model(g1, type = "re")
+
+# plot marginal effects 
+plot_model(g1, type = "pred", terms = "education")
+plot_model(g1, type = "pred", terms = "age")
+plot_model(g1, type = "pred", terms = "gender")
+plot_model(g1, type = "pred", terms = "income")
+plot_model(g1, type = "pred", terms = "activity")
 
 
 #plot the predictions from the two models
@@ -540,12 +491,12 @@ ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
   geom_boxplot(aes(col=gender)) + 
   ylab("Mean distance to road (km)") + xlab("") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_fullmodel.png", width=7.77, height=4.34, units="in")
+ggsave("Model_of_dist2road_bysocioecon_lme_fullmodel.png", width=7.77, height=4.34, units="in")
 ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
   geom_boxplot(aes(col=gender)) + 
   ylab("Mean distance to road (km)") + xlab("") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_parsmodel.png", width=7.77, height=4.34, units="in")
+ggsave("Model_of_dist2road_bysocioecon_lme_parsmodel.png", width=7.77, height=4.34, units="in")
 
 
 ### Drop primary educated people from the model ----
@@ -553,44 +504,28 @@ ggsave("Model_of_dist2road_bysocioecon_glm_parsmodel.png", width=7.77, height=4.
 ppgis_sub2 <- ppgis_sub %>% filter(education!="primary")
 
 #full model and backwards stepwise model selection
-sink("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated.txt")
-mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub2, family = gaussian)
-print(summary(mod_full))
-mod_min <- step(mod_full)
-print(summary(mod_min))
+sink("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated.txt")
+###
+#
+#
 sink()
 
 #manual model selection, without primary educated people
-mod_full <- glm(logmean_dist ~ activity*gender + education + age + income, data = ppgis_sub2, family = gaussian)
-g2 <- glm(logmean_dist ~ activity*gender + age + income, data = ppgis_sub2, family = gaussian)
-g3 <- glm(logmean_dist ~ activity*gender + income, data = ppgis_sub2, family = gaussian)
-g4 <- glm(logmean_dist ~ activity*gender + age, data = ppgis_sub2, family = gaussian)
-g5 <- glm(logmean_dist ~ activity*gender, data = ppgis_sub2, family = gaussian)
-g6 <- glm(logmean_dist ~ activity + gender, data = ppgis_sub2, family = gaussian)
-g7 <- glm(logmean_dist ~ activity + gender + age, data = ppgis_sub2, family = gaussian)
-g8 <- glm(logmean_dist ~ activity + gender + income, data = ppgis_sub2, family = gaussian)
-g9 <- glm(logmean_dist ~ activity + gender + age + income, data = ppgis_sub2, family = gaussian)
-g10 <- glm(logmean_dist ~ activity + age + income, data = ppgis_sub2, family = gaussian)
-g11 <- glm(logmean_dist ~ activity + age , data = ppgis_sub2, family = gaussian)
-g12 <- glm(logmean_dist ~ activity, data = ppgis_sub2, family = gaussian)
-g13 <- glm(logmean_dist ~ activity*gender + education*age + income, data = ppgis_sub2, family = gaussian)
+###
+#
+#
+#
+#
+write.csv(a, "Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_manualmodelselection.csv", row.names=FALSE)
 
-
-a <- do.call(rbind, lapply(list(mod_full, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12), function(x) {
-  df <- data.frame(modelform=do.call(paste0, as.list(as.character(formula(x)[c(2,1,3)]))), AIC=round(AIC(x), 1), AICc=round(AICc(x), 1), BIC=round(BIC(x), 1), stringsAsFactors=FALSE)
-  return(df)
-}))
-write.csv(a, "Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_manualmodelselection.csv", row.names=FALSE)
-
-sink("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated.txt", append=TRUE)
+sink("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated.txt", append=TRUE)
 print(summary(g12))
 sink()
 
-#x <-as.data.frame.table(summary(mod_min)$coefficients) %>% spread(key = Var2, value = Freq)
-#write.csv(x, "Model_of_dist2road_bysocioecon_glm_coefs_dropprimaryeducatedmen.csv", row.names=FALSE)
+
 
 #plot the model checks
-png("Model_of_dist2road_bysocioecon_glm_check_parsmod_dropprimaryeducated.png", width=9, height=7, units="in", res=150)
+png("Model_of_dist2road_bysocioecon_lme_check_parsmod_dropprimaryeducated.png", width=9, height=7, units="in", res=150)
 par(mfrow=c(2,2))
 plot(g12)
 dev.off()
@@ -620,9 +555,6 @@ ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_parsmodel.png", w
 
 
 ############################
-exp( ({AICc(g6)-AICc(g5)}/2) )
-#model g6 is 0.0364 times as probable as mod g5 to minimise the information loss
-
 # #Plot values against fitted by activity
 # #plot(mod3, frequ ~ fitted(.) | activity, abline = c(0,1), col="black")
 # p <- ggplot(ppgis_sub_preds, aes(pred_modmin, logmean_dist)) +
@@ -638,23 +570,10 @@ exp( ({AICc(g6)-AICc(g5)}/2) )
 #   facet_wrap("activity", nrow=3, scales="free") 
 # ggsave("Model_of_dist2road_bysocioecon_glm_logmeandist2road_vs_residuals.png", p)
  
-ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
-          mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
-          mutate(rounddist2road = round(dist2road_m+0.5, 0),
-                 logdist2road = log(rounddist2road)) 
-
-#becasuse we have grouped distance (to 1m) 
-#Trialed a model with logID as random intercept, model would not converge
-g1 <- lmer(logdist2road ~ activity*gender + age + income + education + (1|LogID), data = ppgis_sub, family=gaussian(link="identity"))
-g2 <- glmer(dist2road_m ~ activity + gender + age + income + education + (1|LogID), data = ppgis_sub, family=gaussian(link="log"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
-g3 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=Gamma(link="identity"), glmerControl(optimizer="bobyqa", optCtrl = list(maxfun = 100000)))
-g4 <- glmer(dist2road_m ~ activity + gender + income + education + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
-g5 <- glmer(rounddist2road ~ activity + gender  + (1|LogID), data = ppgis_sub, family=poisson(link="log"))
-
 
 
 #################################
-##Explicitly model development preference
+## Explicitly model development preference ----
 
 #ppgis_sf <- st_read("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis", "Curbes_ppgis_plus_environment_socioeconomic")
 ppgis_df <- read_csv("D:/Box Sync/Arctic/MIKON/CurBES/Data/ppgis/Curbes_ppgis_plus_environment_socioeconomic.csv")
@@ -669,3 +588,12 @@ ppgis_devpref <- ppgis_df %>%
 
 #dist2stuff ~ proportion of points mapped against development
 #expect that people with increasing proportion would map values further from roads
+
+#model how far to where people live include as a covariate/ or as the y value
+#model distance to town. can use their postcode and how far it is to their town.
+#model distance to industry
+#model odds ratio of preferences vs distance to stuff.
+lmer()
+
+
+
