@@ -11,6 +11,7 @@ require(lme4) #lmer
 require(DHARMa)
 require(piecewiseSEM)
 require(sjPlot) #lme plots and diagnostics
+require(ggpubr) #ggarrange
 
 setwd("D:/Box Sync/Arctic/MIKON/CurBES/Analysis/ppgis_model")
 
@@ -382,43 +383,16 @@ write.csv(ppgis_sub_summary, "Participant_characteristics_summary.csv", row.name
 #full model = dist2road_m ~ activity*gender + age + education + income, with LogID as a random effect
 
 ppgis_sub <- ppgis_df %>% drop_na(gender, age, education, income_NOK) %>%
-  mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
-  mutate(rounddist2road = round(dist2road_m+0.5, 0), #so dist starts at 1 not zero thus able to be logged
-         logdist2road = log(rounddist2road)) 
+              select(LogID, dist2road_m, gender, age, education, income_NOK, activity, income) %>%
+              mutate_at(vars(LogID, activity, gender, education, income), as.factor) %>%
+              mutate(rounddist2road = round(dist2road_m+0.5, 0), #so dist starts at 1 not zero thus able to be logged
+                logdist2road = log(rounddist2road)) 
 
 #LME with logID as random intercept
 #Ben Bolker one of the guys behind the lme4 package says that you should put the variables that you control for first in the model
 #and then the variables that are the main focus (activty*gender in this case) should be last
 g1 <- lmer(logdist2road~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub)
-g1_1 <- lmer(dist2road_m~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub) #just tried without logtransformation
-
-#plot residuals assesses how well the predicted and the observed values fit across predictors. The actual (observed) values have a coloured ???ll, while the predicted values have a solid outline without ???lling.
-#https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf
-plot_residuals(g1)
-
-# plot random effects 
-plot_model(g1, type = "re")
-
-# plot marginal effects 
-plot_model(g1, type = "pred", terms = "education")
-plot_model(g1, type = "pred", terms = "age")
-plot_model(g1, type = "pred", terms = "gender")
-plot_model(g1, type = "pred", terms = "income")
-plot_model(g1, type = "pred", terms = "activity")
-
-#plot diagnostic plots for lmer For linear (mixed) models, plots for multicollinearity-check (Variance In???ation Factors), 
-#QQ-plots, checks for normal distribution of residuals and homoscedasticity (constant variance of residuals) are shown https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf.
-p<-plot_model(g1, type = "diag")
-
-p[[1]]
-p[[2]]
-p[[3]]
-p[[4]]
-
-# recommended function to use for rsquared calculations of mixed models in library piecewiseSEM, gives both the variance explained by the fixed effect alone and 
-#the fixed and random component together - the whole model https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5970551/ 
-rsquared(g1)
-
+#g1_1 <- lmer(dist2road_m~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub) #just tried without logtransformation
 #model selection
 g1 <- lmer(logdist2road ~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub)
 g2 <- lmer(logdist2road ~ education + age + activity*gender + (1|LogID), data = ppgis_sub)
@@ -435,123 +409,137 @@ g12 <- lmer(logdist2road ~ activity + age + (1|LogID), data = ppgis_sub)
 g13 <- lmer(logdist2road ~ activity + (1|LogID), data = ppgis_sub)
 g14 <- lmer(logdist2road ~ activity + education*gender + (1|LogID), data = ppgis_sub)
 
-a <- do.call(rbind, lapply(list(g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14), function(x) {
-  df <- data.frame(modelform=do.call(paste0, as.list(as.character(formula(x)))), AIC=round(AIC(x), 1), AICc=round(AICc(x), 1), BIC=round(BIC(x), 1), r_squared=round(rsquared(x), 4), stringsAsFactors=FALSE)
-  return(df)
-}))
-# rsquared() is recommended function to use for rsquared calculations of mixed models in library piecewiseSEM, gives both the variance explained by the fixed effect alone and 
-#the fixed and random component together - the whole model https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5970551/ 
-exp( ({AICc(g6)-AICc(g5)}/2) )
-#e.g. model g6 is 0.0364 times as probable as mod g5 to minimise the information loss
-
-write.csv(a, "Model_of_dist2road_bysocioecon_lme_manualmodelselection.csv", row.names=FALSE)
-
 sink("Model_of_dist2road_bysocioecon_lme.txt", append=TRUE)
+print("Estimate the models by ML and find the most parsimonious")
+print(anova(g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14))
+print("Full model, estimated by REML")
+print(summary(g1))
+print(car::Anova(g1)) #p values for the fixed effects
+print()
+print("Most parsimonious model, estimated by REML")
 print(summary(g13))
 sink()
 
-x <-as.data.frame.table(summary(g11)$coefficients) %>% spread(key = Var2, value = Freq)
-write.csv(x, "Model_of_dist2road_bysocioecon_lme_coefs.csv", row.names=FALSE)
+x <-as.data.frame.table(summary(g13)$coefficients) %>% spread(key = Var2, value = Freq)
+write.csv(x, "Model_of_dist2road_bysocioecon_lme_bestmod_coefs.csv", row.names=FALSE)
+x <-as.data.frame.table(summary(g1)$coefficients) %>% spread(key = Var2, value = Freq)
+write.csv(x, "Model_of_dist2road_bysocioecon_lme_fullmod_coefs.csv", row.names=FALSE)
 
-#plot the model diagnostics
-png("Model_of_dist2road_bysocioecon_lme_check_parsmod.png", width=9, height=7, units="in", res=150)
-par(mfrow=c(2,2))
+# rsquared() is recommended function to use for rsquared calculations of mixed models in library piecewiseSEM, gives both the variance explained by the fixed effect alone and 
+#the fixed and random component together - the whole model https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5970551/ 
+#exp( ({AICc(g6)-AICc(g5)}/2) )
+#e.g. model g6 is 0.0364 times as probable as mod g5 to minimise the information loss. Cant use to compare models run with REML
+
+#plot the model diagnostics, bestmod
 #plot diagnostic plots for lmer For linear (mixed) models, plots for multicollinearity-check (Variance In???ation Factors), 
 #QQ-plots, checks for normal distribution of residuals and homoscedasticity (constant variance of residuals) are shown https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf.
-plot_model(g13, type = "diag")
-dev.off()
+p<-plot_model(g13, type = "diag")
+pout <- ggarrange(p[[1]], p[[2]]$LogID, p[[3]], p[[4]], ncol=2, nrow=2, labels = c("A", "B", "C", "D"))
+ggsave("Model_of_dist2road_bysocioecon_lme_diag_bestmod.png", pout, width=9, height=7, units="in", res=150)
+
+#plot the model diagnostics, fullmod
+p<-plot_model(g1, type = "diag")
+pout <- ggarrange(p[[1]], p[[2]]$LogID, p[[3]], p[[4]], ncol=2, nrow=2, labels = c("A", "B", "C", "D"))
+ggsave("Model_of_dist2road_bysocioecon_lme_diag_fullmod.png", pout, width=9, height=7, units="in", res=150)
+
+# plot marginal effects 
+png("Model_of_dist2road_bysocioecon_lme_marginaleffects_fullmod.png", width=9, height=7, units="in", res=150)
+  p1 <- plot_model(g1, type = "pred", terms = "education")
+  p2 <- plot_model(g1, type = "pred", terms = "age")
+  p3 <- plot_model(g1, type = "pred", terms = "gender")
+  p4 <- plot_model(g1, type = "pred", terms = "income")
+  p5 <- plot_model(g1, type = "pred", terms = "activity")
+
+pout <- ggarrange(p5, ggarrange(p1, p2, p3, p4, ncol = 2, nrow=2, labels = c("B", "C", "D", "E")), # Second row with box and dot plots
+          nrow = 2, labels = "A" )   
+ggsave("Model_of_dist2road_bysocioecon_lme_marginaleffects_fullmod.png", pout, width=7, height=9, units="in", res=150)
 
 #plot residuals assesses how well the predicted and the observed values fit across predictors. The actual (observed) values have a coloured ???ll, while the predicted values have a solid outline without ???lling.
 #https://cran.r-project.org/web/packages/sjPlot/sjPlot.pdf
-plot_residuals(g1)
+#plot_residuals(g1)
 
 # plot random effects 
-plot_model(g1, type = "re")
+#plot_model(g1, type = "re")
 
-# plot marginal effects 
-plot_model(g1, type = "pred", terms = "education")
-plot_model(g1, type = "pred", terms = "age")
-plot_model(g1, type = "pred", terms = "gender")
-plot_model(g1, type = "pred", terms = "income")
-plot_model(g1, type = "pred", terms = "activity")
+# #plot the predictions from the two models
+# ppgis_sub_preds <- ppgis_sub %>% 
+#   add_predictions(g1) %>% 
+#   add_residuals(g1) %>%
+#   mutate(pred_modfull=pred,
+#          resid_modfull=resid) %>%
+#   add_predictions(g13) %>% 
+#   add_residuals(g13) %>%
+#   mutate(pred_bestmod=pred,
+#          resid_bestmod=resid)
+# 
+# ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
+#   geom_boxplot(aes(col=gender)) + 
+#   ylab("Mean distance to road (km)") + xlab("") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# ggsave("Model_of_dist2road_bysocioecon_lme_fullmodel.png", width=7.77, height=4.34, units="in")
+# ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
+#   geom_boxplot(aes(col=gender)) + 
+#   ylab("Mean distance to road (km)") + xlab("") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# ggsave("Model_of_dist2road_bysocioecon_lme_parsmodel.png", width=7.77, height=4.34, units="in")
 
-
-#plot the predictions from the two models
-ppgis_sub_preds <- ppgis_sub %>% 
-  add_predictions(mod_full) %>% 
-  add_residuals(mod_full) %>%
-  mutate(pred_modfull=pred,
-         resid_modfull=resid) %>%
-  add_predictions(g11) %>% 
-  add_residuals(g11) %>%
-  mutate(pred_parsmod=pred,
-         resid_parsmod=resid)
-
-ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_lme_fullmodel.png", width=7.77, height=4.34, units="in")
-ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_lme_parsmodel.png", width=7.77, height=4.34, units="in")
-
-
-### Drop primary educated people from the model ----
+############################
+#### Drop primary educated people from the model ----
 #ppgis_sub2 <- ppgis_sub %>% filter(gender!="Male" | education!="primary")
 ppgis_sub2 <- ppgis_sub %>% filter(education!="primary")
 
-#full model and backwards stepwise model selection
-sink("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated.txt")
-###
-#
-#
-sink()
-
 #manual model selection, without primary educated people
-###
-#
-#
-#
-#
-write.csv(a, "Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_manualmodelselection.csv", row.names=FALSE)
+g1 <- lmer(logdist2road ~ education + age + income + activity*gender + (1|LogID), data = ppgis_sub2)
+g2 <- lmer(logdist2road ~ education + age + activity*gender + (1|LogID), data = ppgis_sub2)
+g3 <- lmer(logdist2road ~ education + income + activity*gender + (1|LogID), data = ppgis_sub2)
+g4 <- lmer(logdist2road ~ education + activity*gender + (1|LogID), data = ppgis_sub2)
+g5 <- lmer(logdist2road ~ activity*gender + (1|LogID), data = ppgis_sub2)
+g6 <- lmer(logdist2road ~ activity + gender + (1|LogID), data = ppgis_sub2)
+g7 <- lmer(logdist2road ~ activity + gender + education + (1|LogID), data = ppgis_sub2)
+g8 <- lmer(logdist2road ~ activity + gender + education + age + (1|LogID), data = ppgis_sub2)
+g9 <- lmer(logdist2road ~ activity + gender + education + age + income + (1|LogID), data = ppgis_sub2)
+g10 <- lmer(logdist2road ~ activity + education + income + (1|LogID), data = ppgis_sub2)
+g11 <- lmer(logdist2road ~ activity + education + age + (1|LogID), data = ppgis_sub2)
+g12 <- lmer(logdist2road ~ activity + age + (1|LogID), data = ppgis_sub2)
+g13 <- lmer(logdist2road ~ activity + (1|LogID), data = ppgis_sub2)
+g14 <- lmer(logdist2road ~ activity + education*gender + (1|LogID), data = ppgis_sub2)
 
 sink("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated.txt", append=TRUE)
-print(summary(g12))
+print("Estimate the models by ML and find the most parsimonious")
+print(anova(g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14))
+print("Full model, estimated by REML")
+print(summary(g1))
+print(car::Anova(g1)) #p values for the fixed effects
+print()
+print("Most parsimonious model, estimated by REML")
+print(summary(g13))
 sink()
 
+x <-as.data.frame.table(summary(g13)$coefficients) %>% spread(key = Var2, value = Freq)
+write.csv(x, "Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_bestmod_coefs.csv", row.names=FALSE)
+x <-as.data.frame.table(summary(g1)$coefficients) %>% spread(key = Var2, value = Freq)
+write.csv(x, "Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_fullmod_coefs.csv", row.names=FALSE)
 
+#plot the model diagnostics, bestmod
+p<-plot_model(g13, type = "diag")
+pout <- ggarrange(p[[1]], p[[2]]$LogID, p[[3]], p[[4]], ncol=2, nrow=2, labels = c("A", "B", "C", "D"))
+ggsave("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_diag_bestmod.png", pout, width=9, height=7, units="in", res=150)
 
-#plot the model checks
-png("Model_of_dist2road_bysocioecon_lme_check_parsmod_dropprimaryeducated.png", width=9, height=7, units="in", res=150)
-par(mfrow=c(2,2))
-plot(g12)
-dev.off()
+#plot the model diagnostics, fullmod
+p<-plot_model(g1, type = "diag")
+pout <- ggarrange(p[[1]], p[[2]]$LogID, p[[3]], p[[4]], ncol=2, nrow=2, labels = c("A", "B", "C", "D"))
+ggsave("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_diag_fullmod.png", pout, width=9, height=7, units="in", res=150)
 
-
-#plot the predictions from the two models
-ppgis_sub_preds <- ppgis_sub2 %>% 
-  add_predictions(mod_full) %>% 
-  add_residuals(mod_full) %>%
-  mutate(pred_modfull=pred,
-         resid_modfull=resid) %>%
-  add_predictions(g12) %>% 
-  add_residuals(g12) %>%
-  mutate(pred_parsmod=pred,
-         resid_parsmod=resid)
-
-ggplot(ppgis_sub_preds, aes(y=exp(pred_modfull)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_fullmodel.png", width=7.77, height=4.34, units="in")
-ggplot(ppgis_sub_preds, aes(y=exp(pred_parsmod)/1000, x=activity))+
-  geom_boxplot(aes(col=gender)) + 
-  ylab("Mean distance to road (km)") + xlab("") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Model_of_dist2road_bysocioecon_glm_dropprimaryeducated_parsmodel.png", width=7.77, height=4.34, units="in")
+# plot marginal effects 
+png("Model_of_dist2road_bysocioecon_lme_marginaleffects_fullmod.png", width=9, height=7, units="in", res=150)
+p1 <- plot_model(g1, type = "pred", terms = "education")
+p2 <- plot_model(g1, type = "pred", terms = "age")
+p3 <- plot_model(g1, type = "pred", terms = "gender")
+p4 <- plot_model(g1, type = "pred", terms = "income")
+p5 <- plot_model(g1, type = "pred", terms = "activity")
+pout <- ggarrange(p5, ggarrange(p1, p2, p3, p4, ncol = 2, nrow=2, labels = c("B", "C", "D", "E")), # Second row with box and dot plots
+                  nrow = 2, labels = "A" )   
+ggsave("Model_of_dist2road_bysocioecon_lme_dropprimaryeducated_marginaleffects_fullmod.png", pout, width=7, height=9, units="in", res=150)
 
 
 ############################
